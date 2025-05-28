@@ -1,0 +1,9 @@
+/gum
+/node_modules
+/signalling
+ca.crt
+ca.key
+cert.crt
+cert.key
+package-lock.json
+taskList.md

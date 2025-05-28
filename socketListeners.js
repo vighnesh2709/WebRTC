@@ -1,11 +1,10 @@
 
-//on connection get all available offers and call createOfferEls
+
 socket.on('availableOffers',offers=>{
     console.log(offers)
     createOfferEls(offers)
 })
 
-//someone just made a new offer and we're already here - call createOfferEls
 socket.on('newOfferAwaiting',offers=>{
     createOfferEls(offers)
 })
@@ -21,7 +20,6 @@ socket.on('receivedIceCandidateFromServer',iceCandidate=>{
 })
 
 function createOfferEls(offers){
-    //make green answer button for this new offer
     const answerEl = document.querySelector('#answer');
     offers.forEach(o=>{
         console.log(o);
