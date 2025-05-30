@@ -38,7 +38,7 @@ const connectedSockets = [
 ]
 
 io.on('connection',(socket)=>{
-    console.log("Someone has connected");
+    console.log("Someone has connected",socket.id);
     const userName = socket.handshake.auth.userName;
     const password = socket.handshake.auth.password;
 
@@ -113,6 +113,10 @@ io.on('connection',(socket)=>{
             }
         }
         console.log(offers)
+    })
+    
+    socket.on('receiveAudio',audioData =>{
+        console.log(audioData);
     })
 
 })

@@ -3,8 +3,9 @@ const password = "x";
 document.querySelector('#user-name').innerHTML = userName;
 
 
-const socket = io.connect('https://192.168.1.39:8181/',{
-// const socket = io.connect('https://localhost:8181/',{
+
+// const socket = io.connect('https://192.168.1.39:8181/',{
+const socket = io.connect('https://localhost:8181/',{
     auth: {
         userName,password
     }
@@ -17,6 +18,8 @@ let localStream;
 let remoteStream; 
 let peerConnection; 
 let didIOffer = false;
+let mediaRecorder
+
 
 let peerConfiguration = {
     iceServers:[
@@ -76,15 +79,17 @@ async function addAnswer(offerObj){
 
 
 function fetchUserMedia(){
+    call = document.getElementById('call')
+    cut = document.getElementById('hangup')   
     return new Promise(async(resolve, reject)=>{
         try{
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
+                video: true,    
                 audio: true,
             });
             localVideoEl.srcObject = stream;
             localStream = stream;
-            console.log("Stream Stream Stream" + localStream);    
+
             resolve();    
         }catch(err){
             console.log(err);
@@ -145,8 +150,60 @@ function addNewIceCandidate(){
     console.log("======Added Ice Candidate======")
 }
 
+function sendAudio(){
+    console.log("Send Audio called");
+    let recorder = null;
+    let chunks = []
 
-document.querySelector('#call').addEventListener('click',call)
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        alert("Browser does not suppoer getUserMedia");
+    }
+
+
+    navigator.mediaDevices.getUserMedia({audio: true}).then(stream=>{
+        recorder = new MediaRecorder(stream);
+        
+        recorder.start(1000);
+
+        recorder.ondataavailable = async event =>{
+            try{
+                console.log("Audio chunk",event.data);
+                const arrayBuffer = await event.data.arrayBuffer()
+                console.log("Array Buffer", arrayBuffer);
+
+                const uint8Array = new Uint8Array(arrayBuffer);
+                console.log("Raw Bytes: ",uint8Array)
+                console.log("first 20 bytes:", uint8Array.slice(0,20))
+                chunks.push(event.data)
+                socket.emit('receiveAudio',uint8Array)
+            }catch(error){
+                console.log("ERROR" + error);
+            }
+        }
+        
+        document.querySelector('#hangup').addEventListener('click',()=>{
+            recorder.stop()
+        })
+
+        recorder.onstop = () =>{
+            console.log("Recording stopped");
+            const blob = new Blob(chunks,{type: 'audio/webm ; codecs=opus'});
+            const audioUrl = URL.createObjectURL(blob)
+            console.log(blob)
+        }
+
+        
+    });
+
+
+
+}
+
+document.querySelector('#call').addEventListener('click', () => {
+  call();
+  sendAudio();
+});
+
 
 // browser embedded in TV (always listen)
 // Server for coms
