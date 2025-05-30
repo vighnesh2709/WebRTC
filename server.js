@@ -119,4 +119,8 @@ io.on('connection',(socket)=>{
         console.log(audioData);
     })
 
+    // socket.on('test',message =>{
+    //     console.log(message)
+    // })
+
 })

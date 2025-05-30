@@ -5,28 +5,35 @@ document.querySelector('#user-name').innerHTML = userName;
 
 
 // const socket = io.connect('https://192.168.1.39:8181/',{
-const socket = io.connect('https://localhost:8181/',{
+const socket = io.connect('https://localhost:8181/', {
     auth: {
-        userName,password
+        userName, password
     }
 })
 
 const localVideoEl = document.querySelector('#local-video');
 const remoteVideoEl = document.querySelector('#remote-video');
 
-let localStream; 
-let remoteStream; 
-let peerConnection; 
+let localStream;
+let remoteStream;
+let peerConnection;
 let didIOffer = false;
 let mediaRecorder
+let isOpen = false
+
+const websocket = new WebSocket("ws://localhost:8001/")
+websocket.addEventListener("open", () => {
+    isOpen = true;
+    console.log("Web socket is open to exchange data")
+})
 
 
 let peerConfiguration = {
-    iceServers:[
+    iceServers: [
         {
-            urls:[
-              'stun:stun.l.google.com:19302',
-              'stun:stun1.l.google.com:19302'
+            urls: [
+                'stun:stun.l.google.com:19302',
+                'stun:stun1.l.google.com:19302'
             ]
         }
     ]
@@ -34,64 +41,64 @@ let peerConfiguration = {
 
 
 
-async function call(){
+async function call() {
     console.log("Button Clicked to Call")
     await fetchUserMedia();
     console.log("User Media Fetched")
     await createPeerConnection();
 
-    try{
+    try {
         console.log("Creating offer...")
         const offer = await peerConnection.createOffer();
         console.log("Offer" + offer);
         peerConnection.setLocalDescription(offer);
         didIOffer = true;
-        socket.emit('newOffer',offer);
-    }catch(err){
+        socket.emit('newOffer', offer);
+    } catch (err) {
         console.log(err)
     }
 
 }
 
 
-async function answerOffer(offerObj){
+async function answerOffer(offerObj) {
     await fetchUserMedia()
     await createPeerConnection(offerObj);
-    const answer = await peerConnection.createAnswer({}); 
-    await peerConnection.setLocalDescription(answer); 
+    const answer = await peerConnection.createAnswer({});
+    await peerConnection.setLocalDescription(answer);
     console.log("offer Object" + offerObj)
     console.log(" Answer" + answer)
-   
-    offerObj.answer = answer 
- 
-    const offerIceCandidates = await socket.emitWithAck('newAnswer',offerObj)
-    offerIceCandidates.forEach(c=>{
+
+    offerObj.answer = answer
+
+    const offerIceCandidates = await socket.emitWithAck('newAnswer', offerObj)
+    offerIceCandidates.forEach(c => {
         peerConnection.addIceCandidate(c);
         console.log("======Added Ice Candidate======")
     })
-    console.log("Ice Candidates"+ offerIceCandidates)
+    console.log("Ice Candidates" + offerIceCandidates)
 }
 
 
-async function addAnswer(offerObj){
+async function addAnswer(offerObj) {
     await peerConnection.setRemoteDescription(offerObj.answer)
 }
 
 
-function fetchUserMedia(){
+function fetchUserMedia() {
     call = document.getElementById('call')
-    cut = document.getElementById('hangup')   
-    return new Promise(async(resolve, reject)=>{
-        try{
+    cut = document.getElementById('hangup')
+    return new Promise(async (resolve, reject) => {
+        try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,    
+                video: true,
                 audio: true,
             });
             localVideoEl.srcObject = stream;
             localStream = stream;
 
-            resolve();    
-        }catch(err){
+            resolve();
+        } catch (err) {
             console.log(err);
             reject()
         }
@@ -99,16 +106,16 @@ function fetchUserMedia(){
 }
 
 
-async function createPeerConnection(offerObj){
-    return new Promise(async(resolve, reject)=>{
+async function createPeerConnection(offerObj) {
+    return new Promise(async (resolve, reject) => {
 
         peerConnection = await new RTCPeerConnection(peerConfiguration)
         remoteStream = new MediaStream()
         remoteVideoEl.srcObject = remoteStream;
 
 
-        localStream.getTracks().forEach(track=>{
-            peerConnection.addTrack(track,localStream);
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
         })
 
         peerConnection.addEventListener("signalingstatechange", (event) => {
@@ -116,28 +123,28 @@ async function createPeerConnection(offerObj){
             console.log(peerConnection.signalingState)
         });
 
-        peerConnection.addEventListener('icecandidate',e=>{
+        peerConnection.addEventListener('icecandidate', e => {
             console.log('........Ice candidate found!......')
             console.log(e)
-            if(e.candidate){
-                socket.emit('sendIceCandidateToSignalingServer',{
+            if (e.candidate) {
+                socket.emit('sendIceCandidateToSignalingServer', {
                     iceCandidate: e.candidate,
                     iceUserName: userName,
                     didIOffer,
-                })    
+                })
             }
         })
-        
-        peerConnection.addEventListener('track',e=>{
+
+        peerConnection.addEventListener('track', e => {
             console.log("Got a track from the other peer!! How excting")
             console.log(e)
-            e.streams[0].getTracks().forEach(track=>{
-                remoteStream.addTrack(track,remoteStream);
+            e.streams[0].getTracks().forEach(track => {
+                remoteStream.addTrack(track, remoteStream);
                 console.log("Here's an exciting moment... fingers cross")
             })
         })
 
-        if(offerObj){
+        if (offerObj) {
             await peerConnection.setRemoteDescription(offerObj.offer)
         }
         resolve();
@@ -145,63 +152,87 @@ async function createPeerConnection(offerObj){
 }
 
 
-function addNewIceCandidate(){
+function addNewIceCandidate() {
     peerConnection.addIceCandidate(iceCandidate)
     console.log("======Added Ice Candidate======")
 }
 
-function sendAudio(){
+function sendAudio() {
     console.log("Send Audio called");
     let recorder = null;
     let chunks = []
 
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Browser does not suppoer getUserMedia");
     }
 
 
-    navigator.mediaDevices.getUserMedia({audio: true}).then(stream=>{
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         recorder = new MediaRecorder(stream);
-        
+
         recorder.start(1000);
 
-        recorder.ondataavailable = async event =>{
-            try{
-                console.log("Audio chunk",event.data);
+        recorder.ondataavailable = async event => {
+            try {
+                console.log("Audio chunk", event.data);
                 const arrayBuffer = await event.data.arrayBuffer()
                 console.log("Array Buffer", arrayBuffer);
 
-                const uint8Array = new Uint8Array(arrayBuffer);
-                console.log("Raw Bytes: ",uint8Array)
-                console.log("first 20 bytes:", uint8Array.slice(0,20))
+                const floatArray = new Float32Array(arrayBuffer);
+                console.log("Raw Bytes: ", uint8Array)
+                console.log("first 20 bytes:", floatArray.slice(0, 20))
                 chunks.push(event.data)
-                socket.emit('receiveAudio',uint8Array)
-            }catch(error){
+                // socket.emit('receiveAudio',uint8Array)
+                websocket.send(floatArray)
+            } catch (error) {
                 console.log("ERROR" + error);
             }
         }
-        
-        document.querySelector('#hangup').addEventListener('click',()=>{
+
+        document.querySelector('#hangup').addEventListener('click', () => {
             recorder.stop()
         })
 
-        recorder.onstop = () =>{
+        recorder.onstop = () => {
             console.log("Recording stopped");
-            const blob = new Blob(chunks,{type: 'audio/webm ; codecs=opus'});
+            const blob = new Blob(chunks, { type: 'audio/webm ; codecs=opus' });
             const audioUrl = URL.createObjectURL(blob)
             console.log(blob)
         }
 
-        
+
     });
 
 
 
 }
 
+async function sendRawAudio() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+
+    // Use AudioWorklet or ScriptProcessorNode (deprecated but simpler)
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (event) => {
+        // Get raw PCM float samples
+        const inputBuffer = event.inputBuffer.getChannelData(0);
+        // Clone buffer so it can be sent asynchronously
+        const floatData = new Float32Array(inputBuffer);
+        // Send floatData to server via websocket or whatever
+        websocket.send(floatData.buffer);
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+}
+
+
 document.querySelector('#call').addEventListener('click', () => {
-  call();
-  sendAudio();
+    call();
+    //   sendAudio();
+    sendRawAudio();
 });
 
 
