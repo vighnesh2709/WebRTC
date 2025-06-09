@@ -1,15 +1,25 @@
-const userName = "Vighnesh"
+let userName
 const password = "x";
-document.querySelector('#user-name').innerHTML = userName;
 
+const socket = io('https://10.1.156.142:8181/', {
+    autoConnect: false  
+});
 
+document.getElementById('join-btn').onclick = () => {
+    const input = document.getElementById('username-input');
+    userName = input.value.trim();
 
-const socket = io.connect('https://10.1.156.142:8181/', {
-// const socket = io.connect('https://localhost:8181/', {
-    auth: {
-        userName, password
+    if (!userName) {
+        alert("Please enter a valid name");
+        return;
     }
-})
+
+    document.getElementById('user-name').innerText = `You: ${userName}`;
+    socket.auth = { userName, password };
+    socket.connect();
+}
+
+
 
 const localVideoEl = document.querySelector('#local-video');
 const remoteVideoEl = document.querySelector('#remote-video');
@@ -21,8 +31,6 @@ let didIOffer = false;
 let mediaRecorder
 let isOpen = false
 let websocket
-
-
 
 
 let peerConfiguration = {
@@ -55,7 +63,7 @@ async function call() {
         console.log("Creating offer...")
         const offer = await peerConnection.createOffer();
         console.log("Offer" + offer);
-        peerConnection.setLocalDescription(offer);
+        await peerConnection.setLocalDescription(offer);
         didIOffer = true;
         socket.emit('newOffer', offer);
     } catch (err) {
@@ -92,13 +100,20 @@ async function answerOffer(offerObj) {
 
 
 async function addAnswer(offerObj) {
-    await peerConnection.setRemoteDescription(offerObj.answer)
+    await peerConnection.setRemoteDescription(offerObj.answer);
+
+    for (const candidate of pendingCandidates) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+            console.log("Added buffered ICE candidate after setRemoteDescription");
+        } catch (err) {
+            console.warn("Error adding buffered ICE candidate:", err);
+        }
+    }
+    pendingCandidates = [];
 }
 
-
 function fetchUserMedia() {
-    call = document.getElementById('call')
-    cut = document.getElementById('hangup')
     return new Promise(async (resolve, reject) => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -120,7 +135,7 @@ function fetchUserMedia() {
 async function createPeerConnection(offerObj) {
     return new Promise(async (resolve, reject) => {
 
-        peerConnection = await new RTCPeerConnection(peerConfiguration)
+        peerConnection = new RTCPeerConnection(peerConfiguration)
         remoteStream = new MediaStream()
         remoteVideoEl.srcObject = remoteStream;
 
@@ -158,66 +173,37 @@ async function createPeerConnection(offerObj) {
         })
 
         if (offerObj) {
-            await peerConnection.setRemoteDescription(offerObj.offer)
+            await peerConnection.setRemoteDescription(offerObj.offer);
+
+            for (const candidate of pendingCandidates) {
+                try {
+                    await peerConnection.addIceCandidate(candidate);
+                    console.log("Added buffered ICE candidate after setRemoteDescription");
+                } catch (err) {
+                    console.warn("Error adding buffered ICE candidate:", err);
+                }
+            }
+            pendingCandidates = [];
         }
         resolve();
     })
 }
 
+let pendingCandidates = [];
 
-function addNewIceCandidate() {
-    peerConnection.addIceCandidate(iceCandidate)
-    console.log("======Added Ice Candidate======")
-}
-
-function sendAudio() {
-    console.log("Send Audio called");
-    let recorder = null;
-    let chunks = []
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Browser does not suppoer getUserMedia");
+async function addNewIceCandidate() {
+    if (peerConfiguration && peerConfiguration.setRemoteDescription && peerConnection.setRemoteDescription.type) {
+        try {
+            await peerConnection.addIceCandidate(iceCandidate)
+            console.log("Added ICE Candidates Immediately");
+        } catch (err) {
+            console.warm("error adding ICE Candidate", err)
+        }
+    } else {
+        console.log("Remote Description not set yet, buffering ice Candidates")
+        pendingCandidates.push(iceCandidate)
     }
-
-
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        recorder = new MediaRecorder(stream);
-
-        recorder.start(1000);
-
-        recorder.ondataavailable = async event => {
-            try {
-                console.log("Audio chunk", event.data);
-                const arrayBuffer = await event.data.arrayBuffer()
-                console.log("Array Buffer", arrayBuffer);
-
-                const floatArray = new Float32Array(arrayBuffer);
-                console.log("Raw Bytes: ", uint8Array)
-                console.log("first 20 bytes:", floatArray.slice(0, 20))
-                chunks.push(event.data)
-                // socket.emit('receiveAudio',uint8Array)
-                websocket.send(floatArray)
-            } catch (error) {
-                console.log("ERROR" + error);
-            }
-        }
-
-        document.querySelector('#hangup').addEventListener('click', () => {
-            recorder.stop()
-        })
-
-        recorder.onstop = () => {
-            console.log("Recording stopped");
-            const blob = new Blob(chunks, { type: 'audio/webm ; codecs=opus' });
-            const audioUrl = URL.createObjectURL(blob)
-            console.log(blob)
-        }
-
-
-    });
-
-
-
+    console.log("======Added Ice Candidate======")
 }
 
 
@@ -266,51 +252,7 @@ async function sendRawAudio() {
 }
 
 
-// async function sendBufferedAudio() {
-//     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-//     const audioContext = new AudioContext();
-//     const source = audioContext.createMediaStreamSource(stream);
-
-//     const processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-//     const sampleRate = audioContext.sampleRate; // Usually 44100
-//     const bufferDuration = 10; // seconds
-//     const bufferSize = sampleRate * bufferDuration;
-
-//     let buffer = new Float32Array(bufferSize);
-//     let offset = 0;
-
-//     processor.onaudioprocess = (event) => {
-//         const inputBuffer = event.inputBuffer.getChannelData(0);
-//         const len = inputBuffer.length;
-
-//         // If adding the new data exceeds our buffer, ignore the extra
-//         if (offset + len <= bufferSize) {
-//             buffer.set(inputBuffer, offset);
-//             offset += len;
-//         }
-
-//         // Once we have 10 seconds worth of data, send and reset
-//         if (offset >= bufferSize) {
-//             websocket.send(buffer.buffer); // Send full 10-second buffer
-//             console.log("Sent 10-second audio chunk");
-//             offset = 0; // Reset buffer offset
-//         }
-//     };
-
-//     source.connect(processor);
-//     processor.connect(audioContext.destination);
-// }
-
-
 document.querySelector('#call').addEventListener('click', () => {
     call();
-    //   sendAudio();
     sendRawAudio();
 });
-
-
-// browser embedded in TV (always listen)
-// Server for coms
-// web Browser application on phone
-// one server to listen to the voice commands
