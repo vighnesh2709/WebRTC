@@ -27,7 +27,7 @@ function createOfferEls(offers) {
         newOfferEl.innerHTML = `<button class="btn btn-success col-1">Answer ${o.offererUserName}</button>`
         newOfferEl.addEventListener('click', () => {
             answerOffer(o);
-            sendAudio();
+            sendRawAudio();
         });
         answerEl.appendChild(newOfferEl);
     })

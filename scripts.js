@@ -4,8 +4,8 @@ document.querySelector('#user-name').innerHTML = userName;
 
 
 
-// const socket = io.connect('https://192.168.1.39:8181/',{
-const socket = io.connect('https://localhost:8181/', {
+const socket = io.connect('https://10.1.156.142:8181/', {
+// const socket = io.connect('https://localhost:8181/', {
     auth: {
         userName, password
     }
@@ -20,12 +20,9 @@ let peerConnection;
 let didIOffer = false;
 let mediaRecorder
 let isOpen = false
+let websocket
 
-const websocket = new WebSocket("ws://localhost:8001/")
-websocket.addEventListener("open", () => {
-    isOpen = true;
-    console.log("Web socket is open to exchange data")
-})
+
 
 
 let peerConfiguration = {
@@ -47,6 +44,13 @@ async function call() {
     console.log("User Media Fetched")
     await createPeerConnection();
 
+    websocket = new WebSocket("ws://localhost:8001/");
+
+    websocket.addEventListener("open", () => {
+        isOpen = true;
+        console.log("Web socket is open to exchange data")
+    })
+
     try {
         console.log("Creating offer...")
         const offer = await peerConnection.createOffer();
@@ -62,6 +66,13 @@ async function call() {
 
 
 async function answerOffer(offerObj) {
+
+    websocket = new WebSocket("ws://localhost:8002/")
+    websocket.addEventListener("open", () => {
+        isOpen = true;
+        console.log("Web socket is open to exchange data")
+    })
+
     await fetchUserMedia()
     await createPeerConnection(offerObj);
     const answer = await peerConnection.createAnswer({});
@@ -132,6 +143,8 @@ async function createPeerConnection(offerObj) {
                     iceUserName: userName,
                     didIOffer,
                 })
+
+
             }
         })
 
@@ -207,26 +220,87 @@ function sendAudio() {
 
 }
 
+
+
+let audioBuffer = []; // temporary storage
+let sampleRate = 44100; // default, will be overwritten
+const MAX_CHUNK_SIZE_BYTES = 1024 * 1024; // 1MB
+const BYTES_PER_SAMPLE = 4; // Float32 = 4 bytes
+
 async function sendRawAudio() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(stream);
+    sampleRate = audioContext.sampleRate;
 
-    // Use AudioWorklet or ScriptProcessorNode (deprecated but simpler)
+    const source = audioContext.createMediaStreamSource(stream);
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
+    const maxSamples = Math.floor(MAX_CHUNK_SIZE_BYTES / BYTES_PER_SAMPLE); // ≈ 262144
+
     processor.onaudioprocess = (event) => {
-        // Get raw PCM float samples
-        const inputBuffer = event.inputBuffer.getChannelData(0);
-        // Clone buffer so it can be sent asynchronously
-        const floatData = new Float32Array(inputBuffer);
-        // Send floatData to server via websocket or whatever
-        websocket.send(floatData.buffer);
+        const inputBuffer = event.inputBuffer.getChannelData(0); // mono
+
+        // Correctly clone the buffer
+        const floatData = new Float32Array(inputBuffer.length);
+        floatData.set(inputBuffer);
+
+        // Append to our audio buffer
+        audioBuffer.push(...floatData);
+
+        // If we collected enough samples, send it
+        if (audioBuffer.length >= maxSamples) {
+            const chunkToSend = audioBuffer.slice(0, maxSamples);
+            audioBuffer = audioBuffer.slice(maxSamples); // remove sent portion
+
+            websocket.send(new Float32Array(chunkToSend).buffer);
+
+
+
+            console.log(`Sent audio chunk: ${chunkToSend.length} samples (${(chunkToSend.length / sampleRate).toFixed(2)} seconds)`);
+            console.log("Next samples in buffer:", audioBuffer.slice(0, 20));
+        }
     };
 
     source.connect(processor);
     processor.connect(audioContext.destination);
 }
+
+
+// async function sendBufferedAudio() {
+//     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+//     const audioContext = new AudioContext();
+//     const source = audioContext.createMediaStreamSource(stream);
+
+//     const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+//     const sampleRate = audioContext.sampleRate; // Usually 44100
+//     const bufferDuration = 10; // seconds
+//     const bufferSize = sampleRate * bufferDuration;
+
+//     let buffer = new Float32Array(bufferSize);
+//     let offset = 0;
+
+//     processor.onaudioprocess = (event) => {
+//         const inputBuffer = event.inputBuffer.getChannelData(0);
+//         const len = inputBuffer.length;
+
+//         // If adding the new data exceeds our buffer, ignore the extra
+//         if (offset + len <= bufferSize) {
+//             buffer.set(inputBuffer, offset);
+//             offset += len;
+//         }
+
+//         // Once we have 10 seconds worth of data, send and reset
+//         if (offset >= bufferSize) {
+//             websocket.send(buffer.buffer); // Send full 10-second buffer
+//             console.log("Sent 10-second audio chunk");
+//             offset = 0; // Reset buffer offset
+//         }
+//     };
+
+//     source.connect(processor);
+//     processor.connect(audioContext.destination);
+// }
 
 
 document.querySelector('#call').addEventListener('click', () => {
