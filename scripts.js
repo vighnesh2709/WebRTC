@@ -1,26 +1,32 @@
 let userName
 const password = "x";
-
+let languageSelect
 const socket = io('https://10.1.156.142:8181/', {
-    autoConnect: false  
+    autoConnect: false
 });
 
 document.getElementById('join-btn').onclick = () => {
     const input = document.getElementById('username-input');
+    languageSelect = document.getElementById('language-select');
+
     userName = input.value.trim();
+    const language = languageSelect.value;
 
     if (!userName) {
         alert("Please enter a valid name");
         return;
     }
 
+    if (!language) {
+        alert("Please select a language");
+        return;
+    }
+
     document.getElementById('user-name').innerText = `You: ${userName}`;
+    console.log(language)
     socket.auth = { userName, password };
     socket.connect();
 }
-
-
-
 const localVideoEl = document.querySelector('#local-video');
 const remoteVideoEl = document.querySelector('#remote-video');
 
@@ -31,7 +37,9 @@ let didIOffer = false;
 let mediaRecorder
 let isOpen = false
 let websocket
-
+let sender
+let receiver
+let languageFlag = false
 
 let peerConfiguration = {
     iceServers: [
@@ -44,9 +52,11 @@ let peerConfiguration = {
     ]
 }
 
-
-
 async function call() {
+    sender = true
+    socket.emit("sendLanguage", languageSelect.value)
+
+
     console.log("Button Clicked to Call")
     await fetchUserMedia();
     console.log("User Media Fetched")
@@ -69,12 +79,12 @@ async function call() {
     } catch (err) {
         console.log(err)
     }
-
 }
 
-
 async function answerOffer(offerObj) {
-
+    receiver = true
+    console.log("SEND LANGUAGE",languageSelect.value)
+    socket.emit("sendLanguage1", languageSelect.value)
     websocket = new WebSocket("ws://localhost:8002/")
     websocket.addEventListener("open", () => {
         isOpen = true;
@@ -97,7 +107,6 @@ async function answerOffer(offerObj) {
     })
     console.log("Ice Candidates" + offerIceCandidates)
 }
-
 
 async function addAnswer(offerObj) {
     await peerConnection.setRemoteDescription(offerObj.answer);
@@ -131,14 +140,12 @@ function fetchUserMedia() {
     })
 }
 
-
 async function createPeerConnection(offerObj) {
     return new Promise(async (resolve, reject) => {
 
         peerConnection = new RTCPeerConnection(peerConfiguration)
         remoteStream = new MediaStream()
         remoteVideoEl.srcObject = remoteStream;
-
 
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
@@ -158,8 +165,6 @@ async function createPeerConnection(offerObj) {
                     iceUserName: userName,
                     didIOffer,
                 })
-
-
             }
         })
 
@@ -206,51 +211,82 @@ async function addNewIceCandidate() {
     console.log("======Added Ice Candidate======")
 }
 
-
-
-let audioBuffer = []; // temporary storage
-let sampleRate = 44100; // default, will be overwritten
-const MAX_CHUNK_SIZE_BYTES = 1024 * 1024; // 1MB
-const BYTES_PER_SAMPLE = 4; // Float32 = 4 bytes
-
 async function sendRawAudio() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const audioContext = new AudioContext();
-    sampleRate = audioContext.sampleRate;
+    console.log("Mic stream obtained");
 
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
     const source = audioContext.createMediaStreamSource(stream);
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-    const maxSamples = Math.floor(MAX_CHUNK_SIZE_BYTES / BYTES_PER_SAMPLE); // ≈ 262144
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);  // buffer size, input channels, output channels
 
     processor.onaudioprocess = (event) => {
-        const inputBuffer = event.inputBuffer.getChannelData(0); // mono
+        const float32Data = event.inputBuffer.getChannelData(0); // mono channel
+        const int16Data = new Int16Array(float32Data.length);
 
-        // Correctly clone the buffer
-        const floatData = new Float32Array(inputBuffer.length);
-        floatData.set(inputBuffer);
+        for (let i = 0; i < float32Data.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Data[i]));
+            int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
 
-        // Append to our audio buffer
-        audioBuffer.push(...floatData);
+        // Emit the raw PCM as binary
+        if (sender) {
 
-        // If we collected enough samples, send it
-        if (audioBuffer.length >= maxSamples) {
-            const chunkToSend = audioBuffer.slice(0, maxSamples);
-            audioBuffer = audioBuffer.slice(maxSamples); // remove sent portion
+            socket.emit("Audio1", int16Data.buffer, { binary: true });
 
-            websocket.send(new Float32Array(chunkToSend).buffer);
+        }
+        if (receiver) {
 
+            socket.emit("Audio2", int16Data.buffer, { binary: true });
 
-
-            console.log(`Sent audio chunk: ${chunkToSend.length} samples (${(chunkToSend.length / sampleRate).toFixed(2)} seconds)`);
-            console.log("Next samples in buffer:", audioBuffer.slice(0, 20));
         }
     };
 
     source.connect(processor);
-    processor.connect(audioContext.destination);
+    processor.connect(audioContext.destination);  // Keep alive
+
+    console.log("Streaming raw PCM audio...");
 }
 
+// Fixed audio event handlers
+socket.on("listener1", (audioData) => {
+    console.log("Received audio on listener1");
+    playTranslatedAudio(audioData);
+});
+
+socket.on("listener2", (audioData) => {
+    console.log("Received audio on listener2");
+    playTranslatedAudio(audioData);
+});
+
+
+
+function playTranslatedAudio(response) {
+    try {
+        console.log("Playing translated audio response");
+
+        // The response from SarvamAI TTS should contain the audio data
+        // Check if it has the expected structure
+        if (response && response.audios && response.audios[0]) {
+            // Assuming the audio is base64 encoded
+            const audioSrc = `data:audio/wav;base64,${response.audios[0]}`;
+            const audioElement = new Audio(audioSrc);
+
+            audioElement.play()
+                .then(() => {
+                    console.log("Translated audio playback started");
+                })
+                .catch((err) => {
+                    console.error("Audio playback failed:", err);
+                });
+        } else {
+            console.error("Unexpected audio response format:", response);
+        }
+
+    } catch (error) {
+        console.error("Error processing translated audio:", error);
+    }
+}
 
 document.querySelector('#call').addEventListener('click', () => {
     call();

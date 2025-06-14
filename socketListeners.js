@@ -32,3 +32,7 @@ function createOfferEls(offers) {
         answerEl.appendChild(newOfferEl);
     })
 }
+
+
+
+

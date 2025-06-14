@@ -11,9 +11,15 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.5.0",
     "express": "^4.18.2",
+    "fetch-blob": "^4.0.0",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
     "mkcert": "^1.5.1",
+    "sarvamai": "^0.1.5",
     "socket.io": "^4.6.2",
-    "twilio": "^5.7.0"
+    "twilio": "^5.7.0",
+    "undici": "^7.10.0"
   }
 }

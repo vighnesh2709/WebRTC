@@ -7,3 +7,8 @@ cert.crt
 cert.key
 package-lock.json
 taskList.md
+.env
+output.mp3
+output2.mp3
+test.raw
+test2.raw
