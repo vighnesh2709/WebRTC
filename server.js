@@ -3,17 +3,16 @@ const https = require('https');
 const express = require('express');
 const app = express();
 const socketio = require('socket.io');
-const { blob, buffer } = require('stream/consumers');
 require('dotenv').config();
 const { SarvamAIClient } = require("sarvamai");
-const Ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const { Writable } = require('stream');
-const { type } = require('os');
 const { exec } = require('child_process');
-const { error } = require('console');
-const { configDotenv } = require('dotenv');
 
+const rawFile = "/home/vighnesh/Desktop/NITT/WebRTC/test.raw";
+const mp3File = "/home/vighnesh/Desktop/NITT/WebRTC/output.mp3";
+const rawFile2 = "/home/vighnesh/Desktop/NITT/WebRTC/test2.raw";
+const mp3File2 = "/home/vighnesh/Desktop/NITT/WebRTC/output2.mp3";
+const API_KEY = process.env.SARVAM_API_KEY;
+const client = new SarvamAIClient({ apiSubscriptionKey: API_KEY });
 
 app.use(express.static(__dirname));
 
@@ -29,7 +28,8 @@ const io = socketio(expressServer, {
             "https://192.168.1.39",
             "https://10.1.156.142",
             "https://10.1.26.236",
-            "https://10.1.156.142"
+            "https://10.1.156.142",
+            "https://10.1.156.31"
         ],
         methods: ["GET", "POST"]
     }
@@ -49,7 +49,7 @@ io.on('connection', (socket) => {
     const userName = socket.handshake.auth.userName;
     const password = socket.handshake.auth.password;
 
-    console.log(`👤 Auth attempt by '${userName}'`);
+    console.log(`Auth attempt by '${userName}'`);
 
     if (password !== "x") {
         console.log(`Incorrect password for '${userName}', disconnecting`);
@@ -61,7 +61,7 @@ io.on('connection', (socket) => {
         socketId: socket.id,
         userName
     });
-    console.log(`✅ '${userName}' authenticated and added to connectedSockets`);
+    console.log(`'${userName}' authenticated and added to connectedSockets`);
 
     if (offers.length) {
         socket.emit('availableOffers', offers);
@@ -152,19 +152,6 @@ io.on('connection', (socket) => {
 
     })
 
-    // socket.on("Audio1",(audio)=>{
-    //      console.log("Received audio message")
-    //      console.log(audio)
-    //      socket.broadcast.emit("Listener1",audio)
-    // })
-    // let fileCount = 0
-
-    const rawFile = "/home/vighnesh/Desktop/NITT/WebRTC/test.raw";
-    const mp3File = "/home/vighnesh/Desktop/NITT/WebRTC/output.mp3";
-    const rawFile2 = "/home/vighnesh/Desktop/NITT/WebRTC/test2.raw";
-    const mp3File2 = "/home/vighnesh/Desktop/NITT/WebRTC/output2.mp3";
-    const API_KEY = process.env.SARVAM_API_KEY;
-    const client = new SarvamAIClient({ apiSubscriptionKey: API_KEY });
 
     const languageMap = {
         "bn": "bn-IN",
@@ -181,8 +168,8 @@ io.on('connection', (socket) => {
         "NA": "NA"
     };
 
-    let isProcessing1 = false; // Separate flag for Audio1
-    let isProcessing2 = false; // Separate flag for Audio2
+    let isProcessing1 = false; 
+    let isProcessing2 = false; 
 
 
     socket.on("sendLanguage", (data) => {
@@ -197,9 +184,7 @@ io.on('connection', (socket) => {
         if (isProcessing1) return;
         fs.appendFileSync(rawFile, data);
         const stats = fs.statSync(rawFile);
-        // console.log(`RAW file size: ${stats.size} bytes`);
-        console.log("2", targetLanguage2)
-
+ 
         if (stats.size >= 512000) {
 
             if (targetLanguage2 !== "NA") {
@@ -212,19 +197,15 @@ io.on('connection', (socket) => {
                         exec(cmd, (error, stdout, stderr) => {
                             if (error) return reject(error);
                             if (stderr) console.warn(stderr);
-                            // console.log("✅ MP3 created");
                             resolve();
                         });
                     });
 
-                    // Transcribe
                     const buffer = fs.readFileSync(mp3File);
                     const file = new File([buffer], "chunk.mp3", { type: "audio/mpeg" });
                     const response = await client.speechToText.transcribe(file, {
                         model: "saarika:v2",
                     });
-                    // console.log("ORIGINAL AUDIO TO TEXT")
-                    // console.log(response)
 
 
                     const response1 = await client.text.translate({
@@ -234,8 +215,7 @@ io.on('connection', (socket) => {
                         speaker_gender: "Male"
                     });
 
-                    // console.log("TEXT TO TEXT TRANSLATION 1", targetLanguage2)
-                    // console.log(response1)
+
 
                     const response2 = await client.textToSpeech.convert({
                         text: response1.translated_text,
@@ -243,20 +223,19 @@ io.on('connection', (socket) => {
                         speaker: "anushka",
                         target_language_code: targetLanguage2
                     });
-                    // console.log("TEXT TO SPEECH DONE")
 
                     socket.broadcast.emit("listener2", response2)
 
                 } catch (err) {
                     console.error("Error during FFmpeg or Sarvam:", err);
                 } finally {
-                    // 🔄 Clean up for next chunk
+                 
                     try {
                         fs.unlinkSync(rawFile);
                         fs.unlinkSync(mp3File);
-                        // console.log("Files reset for next chunk");
+                        
                     } catch (cleanupErr) {
-                        // console.warn("Cleanup error:", cleanupErr.message);
+                        console.warn("Cleanup error:", cleanupErr.message);
                     }
                     isProcessing1 = false;
                 }
@@ -269,8 +248,7 @@ io.on('connection', (socket) => {
 
         fs.appendFileSync(rawFile2, data);
         const stats = fs.statSync(rawFile2);
-        // console.log(`RAW file size: ${stats.size} bytes`);
-        console.log("1", targetLanguage1)
+     
         if (stats.size >= 512000) {
             if (targetLanguage1 !== "NA") {
 
@@ -284,7 +262,7 @@ io.on('connection', (socket) => {
                         exec(cmd, (error, stdout, stderr) => {
                             if (error) return reject(error);
                             if (stderr) console.warn(stderr);
-                            // console.log("✅ MP3 created");
+                            
                             resolve();
                         });
                     });
@@ -295,16 +273,14 @@ io.on('connection', (socket) => {
                     const response = await client.speechToText.transcribe(file, {
                         model: "saarika:v2",
                     });
-                    // console.log("ORIGINAL SPEECH TO TEXT")
-                    // console.log(response.transcript)
+                    
                     const response1 = await client.text.translate({
                         input: response.transcript,
                         source_language_code: "auto",
                         target_language_code: targetLanguage1,
                         speaker_gender: "Male"
                     });
-                    // console.log("TEXT TO TEXT Translation 2", targetLanguage1)
-                    // console.log(response1.translated_text)
+                   
 
                     const response2 = await client.textToSpeech.convert({
                         text: response1.translated_text,
@@ -312,17 +288,15 @@ io.on('connection', (socket) => {
                         speaker: "anushka",
                         target_language_code: targetLanguage1
                     });
-                    // console.log("TEXT TO SPEECH DONE")
                     socket.broadcast.emit("listener1", response2)
 
                 } catch (err) {
                     console.error(" Error during FFmpeg or Sarvam:", err);
                 } finally {
-                    // 🔄 Clean up for next chunk
+                    
                     try {
                         fs.unlinkSync(rawFile2);
                         fs.unlinkSync(mp3File2);
-                        // console.log("Files reset for next chunk");
                     } catch (cleanupErr) {
                         console.warn("Cleanup error:", cleanupErr.message);
                     }

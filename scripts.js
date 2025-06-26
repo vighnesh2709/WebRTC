@@ -1,7 +1,7 @@
 let userName
 const password = "x";
 let languageSelect
-const socket = io('https://10.1.156.142:8181/', {
+const socket = io('https://localhost:8181/', {
     autoConnect: false
 });
 
@@ -229,7 +229,6 @@ async function sendRawAudio() {
             int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
 
-        // Emit the raw PCM as binary
         if (sender) {
 
             socket.emit("Audio1", int16Data.buffer, { binary: true });
@@ -243,12 +242,12 @@ async function sendRawAudio() {
     };
 
     source.connect(processor);
-    processor.connect(audioContext.destination);  // Keep alive
+    processor.connect(audioContext.destination);  
 
     console.log("Streaming raw PCM audio...");
 }
 
-// Fixed audio event handlers
+
 socket.on("listener1", (audioData) => {
     console.log("Received audio on listener1");
     playTranslatedAudio(audioData);
@@ -265,10 +264,9 @@ function playTranslatedAudio(response) {
     try {
         console.log("Playing translated audio response");
 
-        // The response from SarvamAI TTS should contain the audio data
-        // Check if it has the expected structure
+       
         if (response && response.audios && response.audios[0]) {
-            // Assuming the audio is base64 encoded
+            
             const audioSrc = `data:audio/wav;base64,${response.audios[0]}`;
             const audioElement = new Audio(audioSrc);
 
